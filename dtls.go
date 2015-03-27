@@ -69,7 +69,7 @@ static X509 *gen_cert(EVP_PKEY* pkey, const char *common, int days) {
     goto cert_err;
 
   if (0) {
-cert_err:  
+cert_err:
     X509_free(x509);
     x509 = NULL;
   }
@@ -125,7 +125,7 @@ dtls_context *new_dtls_context(const char *common, int days) {
   if (cert == NULL)
     goto ctx_err;
   SSL_CTX_use_certificate(ctx, cert);
-  
+
   if (SSL_CTX_check_private_key(ctx) != 1)
     goto ctx_err;
 
@@ -199,126 +199,128 @@ trans_err:
 import "C"
 
 import (
-  "errors"
-  "unsafe"
-  "sync"
-  "time"
+	"errors"
+	"sync"
+	"time"
+	"unsafe"
 )
 
 var (
-  tryAgainError = errors.New("try again")
-  handshakeError = errors.New("failed to handshake")
+	tryAgainError  = errors.New("try again")
+	handshakeError = errors.New("failed to handshake")
 )
 
 type DtlsContext struct {
-  ctx *C.dtls_context
+	ctx *C.dtls_context
 }
 
 func NewContext(common string, days int) (*DtlsContext, error) {
-  s := C.CString(common)
-  defer C.free(unsafe.Pointer(s))
-  ctx := C.new_dtls_context(s, C.int(days))
-  if ctx == nil {
-    return nil, errors.New("failed to create DTLS context")
-  }
-  return &DtlsContext{ctx}, nil
+	s := C.CString(common)
+	defer C.free(unsafe.Pointer(s))
+	ctx := C.new_dtls_context(s, C.int(days))
+	if ctx == nil {
+		return nil, errors.New("failed to create DTLS context")
+	}
+	return &DtlsContext{ctx}, nil
 }
 
 func (c *DtlsContext) Destroy() {
-  C.SSL_CTX_free(c.ctx.ctx)
-  C.free(unsafe.Pointer(c.ctx))
+	C.SSL_CTX_free(c.ctx.ctx)
+	C.free(unsafe.Pointer(c.ctx))
 }
 
 type DtlsTransport struct {
-  dtls *C.dtls_transport
-  fingerprint string
-  mtx sync.Mutex
+	dtls        *C.dtls_transport
+	Fingerprint string
+	mtx         sync.Mutex
 }
 
 func (c *DtlsContext) NewTransport() (*DtlsTransport, error) {
-  dtls := C.new_dtls_transport(c.ctx)
-  if dtls == nil {
-    return nil, errors.New("failed to create DTLS transport")
-  }
-  fingerprint := C.GoString(&c.ctx.fp[0])
-  t := &DtlsTransport{dtls: dtls, fingerprint: fingerprint}
-  return t, nil
+	dtls := C.new_dtls_transport(c.ctx)
+	if dtls == nil {
+		return nil, errors.New("failed to create DTLS transport")
+	}
+	fingerprint := C.GoString(&c.ctx.fp[0])
+	t := &DtlsTransport{dtls: dtls, Fingerprint: fingerprint}
+	return t, nil
 }
 
 func (t *DtlsTransport) Destroy() {
-  C.SSL_free(t.dtls.ssl)
-  C.free(unsafe.Pointer(t.dtls))
-}
-
-func (t *DtlsTransport) Fingerprint() string {
-  return t.fingerprint
+	C.SSL_free(t.dtls.ssl)
+	C.free(unsafe.Pointer(t.dtls))
 }
 
 func (t *DtlsTransport) SetConnectState() {
-  C.SSL_set_connect_state(t.dtls.ssl)
+	C.SSL_set_connect_state(t.dtls.ssl)
 }
 
 func (t *DtlsTransport) SetAcceptState() {
-  C.SSL_set_accept_state(t.dtls.ssl)
+	C.SSL_set_accept_state(t.dtls.ssl)
 }
 
 func (t *DtlsTransport) handshake() error {
-  t.mtx.Lock()
-  defer t.mtx.Unlock()
-  rv := C.SSL_do_handshake(t.dtls.ssl)
-  if rv == 1 {
-    return nil
-  }
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	rv := C.SSL_do_handshake(t.dtls.ssl)
+	if rv == 1 {
+		return nil
+	}
 
-  code := C.SSL_get_error(t.dtls.ssl, rv)
-  switch code {
-    case C.SSL_ERROR_WANT_READ:
-      fallthrough
-    case C.SSL_ERROR_WANT_WRITE:
-      return tryAgainError
-  }
-  return handshakeError
+	code := C.SSL_get_error(t.dtls.ssl, rv)
+	switch code {
+	case C.SSL_ERROR_WANT_READ:
+		fallthrough
+	case C.SSL_ERROR_WANT_WRITE:
+		return tryAgainError
+	}
+	return handshakeError
 }
 
 func (t *DtlsTransport) Handshake() error {
-  err := tryAgainError
-  for err == tryAgainError {
-    time.Sleep(4 * time.Millisecond)
-    err = t.handshake()
-  }
-  return err
+	err := tryAgainError
+	for err == tryAgainError {
+		time.Sleep(4 * time.Millisecond)
+		err = t.handshake()
+	}
+	return err
 }
 
 func (t *DtlsTransport) Write(data []byte) (int, error) {
-  t.mtx.Lock()
-  defer t.mtx.Unlock()
-  n := C.SSL_write(t.dtls.ssl, unsafe.Pointer(&data[0]), C.int(len(data)))
-  if n < 0 {
-    return 0, errors.New("failed to write data")
-  }
-  return int(n), nil
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	n := C.SSL_write(t.dtls.ssl, unsafe.Pointer(&data[0]), C.int(len(data)))
+	if n < 0 {
+		return 0, errors.New("failed to write data")
+	}
+	return int(n), nil
 }
 
 func (t *DtlsTransport) Read(buf []byte) (int, error) {
-  t.mtx.Lock()
-  defer t.mtx.Unlock()
-  n := C.SSL_read(t.dtls.ssl, unsafe.Pointer(&buf[0]), C.int(len(buf)))
-  if n < 0 {
-    return 0, errors.New("failed to read data")
-  }
-  return int(n), nil
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	n := C.SSL_read(t.dtls.ssl, unsafe.Pointer(&buf[0]), C.int(len(buf)))
+	if n < 0 {
+		return 0, errors.New("failed to read data")
+	}
+	return int(n), nil
 }
 
-func (t *DtlsTransport) Feed(data []byte) int {
-  t.mtx.Lock()
-  defer t.mtx.Unlock()
-  n := C.BIO_write(t.dtls.ibio, unsafe.Pointer(&data[0]), C.int(len(data)))
-  return int(n)
+func (t *DtlsTransport) Feed(data []byte) (int, error) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	n := C.BIO_write(t.dtls.ibio, unsafe.Pointer(&data[0]), C.int(len(data)))
+	if n < 0 {
+		return 0, errors.New("failed to feed data")
+	}
+	return int(n), nil
 }
 
-func (t *DtlsTransport) Spew(buf []byte) int {
-  t.mtx.Lock()
-  defer t.mtx.Unlock()
-  n := C.BIO_read(t.dtls.obio, unsafe.Pointer(&buf[0]), C.int(len(buf)))
-  return int(n)
+func (t *DtlsTransport) Spew(buf []byte) (int, error) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	n := C.BIO_read(t.dtls.obio, unsafe.Pointer(&buf[0]), C.int(len(buf)))
+	if n < 0 {
+		return 0, errors.New("no data")
+	}
+	return int(n), nil
 }
