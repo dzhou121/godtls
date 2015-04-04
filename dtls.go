@@ -207,7 +207,6 @@ import (
 
 var (
 	tryAgainError  = errors.New("try again")
-	handshakeError = errors.New("failed to handshake")
 )
 
 type DtlsContext struct {
@@ -273,7 +272,7 @@ func (t *DtlsTransport) handshake() error {
 	case C.SSL_ERROR_WANT_WRITE:
 		return tryAgainError
 	}
-	return handshakeError
+	return errors.New("failed to handshake")
 }
 
 func (t *DtlsTransport) Handshake() error {
