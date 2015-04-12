@@ -206,7 +206,7 @@ import (
 )
 
 var (
-	tryAgainError  = errors.New("try again")
+	tryAgainError = errors.New("try again")
 )
 
 type DtlsContext struct {
