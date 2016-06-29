@@ -2,7 +2,7 @@ package godtls
 
 /*
 #cgo pkg-config: openssl
-#cgo CFLAGS: -Wno-deprecated
+#cgo CFLAGS: -Wno-deprecated -I/usr/local/Cellar/openssl/1.0.2g/include
 
 #include <stdlib.h>
 #include <openssl/ssl.h>
@@ -129,12 +129,15 @@ dtls_context *new_dtls_context(const char *common, int days) {
   if (SSL_CTX_check_private_key(ctx) != 1)
     goto ctx_err;
 
+  SSL_CTX_set_tlsext_use_srtp(ctx, "SRTP_AES128_CM_SHA1_80");
+
   unsigned int len;
   unsigned char buf[1024];
   X509_digest(cert, EVP_sha256(), buf, &len);
 
   char *p = context->fp;
-  for (int i = 0; i < len; ++i) {
+  int 1;
+  for (i = 0; i < len; ++i) {
     snprintf(p, 4, "%02X:", buf[i]);
     p += 3;
   }
@@ -200,7 +203,10 @@ import "C"
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"sync"
+	"syscall"
 	"time"
 	"unsafe"
 )
@@ -298,10 +304,12 @@ func (t *DtlsTransport) Read(buf []byte) (int, error) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	n := C.SSL_read(t.dtls.ssl, unsafe.Pointer(&buf[0]), C.int(len(buf)))
-	if n < 0 {
-		return 0, errors.New("failed to read data")
+	if n > 0 {
+		return int(n), nil
 	}
-	return int(n), nil
+
+	err := t.getError(n)
+	return 0, err
 }
 
 func (t *DtlsTransport) Feed(data []byte) (int, error) {
@@ -322,4 +330,59 @@ func (t *DtlsTransport) Spew(buf []byte) (int, error) {
 		return 0, errors.New("no data")
 	}
 	return int(n), nil
+}
+
+func (t *DtlsTransport) getError(ret C.int) error {
+	err := C.SSL_get_error(c.ssl, ret)
+	switch err {
+	case C.SSL_ERROR_NONE:
+		return nil
+	case C.SSL_ERROR_ZERO_RETURN:
+		return io.EOF
+	case C.SSL_ERROR_SYSCALL:
+		if int(C.ERR_peek_error()) != 0 {
+			return syscall.Errno(C.get_errno())
+		}
+
+	default:
+		msg := ""
+		for {
+			errCode := C.ERR_get_error()
+			if errCode == 0 {
+				break
+			}
+			msg += getErrorString(errCode)
+		}
+		C.ERR_clear_error()
+		return errors.New(msg)
+	}
+	return nil
+}
+
+func getErrorString(code C.ulong) string {
+	if code == 0 {
+		return ""
+	}
+	msg := fmt.Sprintf("%s:%s:%s\n",
+		C.GoString(C.ERR_lib_error_string(code)),
+		C.GoString(C.ERR_func_error_string(code)),
+		C.GoString(C.ERR_reason_error_string(code)))
+	if len(msg) == 4 { //being lazy here, all the strings were empty
+		return ""
+	}
+	//Check for extra line data
+	var file *C.char
+	var line C.int
+	var data *C.char
+	var flags C.int
+	if int(C.ERR_get_error_line_data(&file, &line, &data, &flags)) != 0 {
+		msg += fmt.Sprintf("%s:%s", C.GoString(file), int(line))
+		if flags&C.ERR_TXT_STRING != 0 {
+			msg += ":" + C.GoString(data)
+		}
+		if flags&C.ERR_TXT_MALLOCED != 0 {
+			C.CRYPTO_free(unsafe.Pointer(data), C.CString(""), 0)
+		}
+	}
+	return msg
 }
