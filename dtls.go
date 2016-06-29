@@ -110,11 +110,12 @@ dtls_context *new_dtls_context(const char *common, int days) {
   context->ctx = ctx;
 
   // ALL:NULL:eNULL:aNULL
-  if (SSL_CTX_set_cipher_list(ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH") != 1)
+  if (SSL_CTX_set_cipher_list(ctx, "ALL") != 1)
     goto ctx_err;
 
   SSL_CTX_set_read_ahead(ctx, 1); // for DTLS
-  SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, verify_peer_certificate_cb);
+  SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+  SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
 
   EVP_PKEY *key = gen_key();
   if (key == NULL)
@@ -183,6 +184,9 @@ dtls_transport *new_dtls_transport(dtls_context *context)
   dtls->obio = bio;
 
   SSL_set_bio(dtls->ssl, dtls->ibio, dtls->obio);
+  SSL_set_mode(dtls->ssl, SSL_MODE_AUTO_RETRY);
+  SSL_set_read_ahead(dtls->ssl, 1);
+  SSL_set_verify(dtls->ssl, SSL_VERIFY_NONE, NULL);
 
   EC_KEY *ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
   SSL_set_options(dtls->ssl, SSL_OP_SINGLE_ECDH_USE);
