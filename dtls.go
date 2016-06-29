@@ -206,7 +206,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"syscall"
 	"time"
 	"unsafe"
 )
@@ -341,7 +340,8 @@ func (t *DtlsTransport) getError(ret C.int) error {
 		return io.EOF
 	case C.SSL_ERROR_SYSCALL:
 		if int(C.ERR_peek_error()) != 0 {
-			return syscall.Errno(int(C.get_errno()))
+			return errors.New("ssl syscall error")
+			// return syscall.Errno(int(C.get_errno()))
 		}
 
 	default:
