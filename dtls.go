@@ -136,7 +136,7 @@ dtls_context *new_dtls_context(const char *common, int days) {
   X509_digest(cert, EVP_sha256(), buf, &len);
 
   char *p = context->fp;
-  int 1;
+  int i;
   for (i = 0; i < len; ++i) {
     snprintf(p, 4, "%02X:", buf[i]);
     p += 3;
