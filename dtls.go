@@ -342,7 +342,12 @@ func (t *DtlsTransport) getError(ret C.int) error {
 			return errors.New("ssl syscall error")
 			// return syscall.Errno(int(C.get_errno()))
 		}
-
+	case C.SSL_ERROR_SSL:
+		return errors.New("ssl error ssl")
+	case C.SSL_ERROR_WANT_READ:
+		return errors.New("ssl error want read")
+	case C.SSL_ERROR_WANT_WRITE:
+		return errors.New("ssl error want write")
 	default:
 		return errors.New("error occured")
 	}
