@@ -104,7 +104,7 @@ dtls_context *new_dtls_context(const char *common, int days) {
     ssl_init = 1;
   }
 
-  SSL_CTX *ctx = SSL_CTX_new(DTLSv1_method());
+  SSL_CTX *ctx = SSL_CTX_new(DTLSv1_client_method());
   if (ctx == NULL)
     goto ctx_err;
   context->ctx = ctx;
