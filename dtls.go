@@ -318,10 +318,12 @@ func (t *DtlsTransport) Feed(data []byte) (int, error) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	n := C.BIO_write(t.dtls.ibio, unsafe.Pointer(&data[0]), C.int(len(data)))
-	if n < 0 {
-		return 0, errors.New("failed to feed data")
+	if n > 0 {
+		return int(n), nil
 	}
-	return int(n), nil
+
+	err := t.getError(n)
+	return 0, err
 }
 
 func (t *DtlsTransport) Spew(buf []byte) (int, error) {
